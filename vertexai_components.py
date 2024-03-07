@@ -3,10 +3,12 @@ import os
 import requests
 import shutil
 
+from google.oauth2 import service_account
 
 import vertexai
 from vertexai.language_models import ChatModel, CodeChatModel, TextGenerationModel, CodeGenerationModel
 from vertexai.preview.generative_models import GenerativeModel, Part
+from google.cloud import aiplatform
 
 
 @xai_component
@@ -19,7 +21,7 @@ class VertexAIAuthorize(Component):
     - from_env: Boolean value indicating whether the API key is to be fetched from environment variables. 
     """
     project: InArg[str]
-    api_key: InArg[secret]
+    api_key_location: InArg[str]
     location: InArg[str]
     from_env: InArg[bool]
 
@@ -27,14 +29,20 @@ class VertexAIAuthorize(Component):
         project_id = self.project.value
         
         if self.from_env.value:
-            api_key = os.getenv("VERTEXAI_API_KEY")
+            vertexai.init(
+                project=project_id,
+                location=self.location.value if self.location.value else "us-central1"
+            )            
         else:
-            api_key = self.api_key.value
-        
-        vertexai.init(
-            project=project_id,
-            location=self.location.value if self.location.value else "us-central1"
-        )
+            credentials = service_account.Credentials.from_service_account_file(self.api_key_location.value)
+            ctx['vertexai_credential'] = credentials
+
+            vertexai.init(
+                project=project_id,
+                location=self.location.value if self.location.value else "us-central1",
+                credentials=credentials
+            )
+
 
 
 @xai_component
@@ -235,8 +243,7 @@ class VertexMultimodalGenerate(Component):
                 "top_k": 32 if self.top_k.value is None else self.top_k.value
             }
         )
-        
+
         self.response.value = responses
-        
-        
-        
+        self.response_text.value = responses.candidates[0].content.text
+
